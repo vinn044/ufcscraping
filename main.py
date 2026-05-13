@@ -11,11 +11,6 @@ from prediction_tracker import (
     show_accuracy
 )
 
-from parlay import (
-    generate_all_outcome_parlays,
-    parlay_probability
-)
-
 df = pd.read_csv("UFC.csv")
 
 # Create fighter ages
@@ -315,16 +310,55 @@ def predict_fight(fighter_one, fighter_two):
         "r_sub_avg": fighter_one_stats["sub_avg"],
         "b_sub_avg": fighter_two_stats["sub_avg"],
 
-        "age_diff": fighter_one_stats["age"] - fighter_two_stats["age"],
-        "reach_diff": fighter_one_stats["reach"] - fighter_two_stats["reach"],
-        "height_diff": fighter_one_stats["height"] - fighter_two_stats["height"],
-        "str_acc_diff": fighter_one_stats["str_acc"] - fighter_two_stats["str_acc"],
-        "splm_diff": fighter_one_stats["splm"] - fighter_two_stats["splm"],
-        "sapm_diff": fighter_one_stats["sapm"] - fighter_two_stats["sapm"],
-        "td_avg_diff": fighter_one_stats["td_avg"] - fighter_two_stats["td_avg"],
-        "td_def_diff": fighter_one_stats["td_def"] - fighter_two_stats["td_def"],
-        "str_def_diff": fighter_one_stats["str_def"] - fighter_two_stats["str_def"],
-        "sub_avg_diff": fighter_one_stats["sub_avg"] - fighter_two_stats["sub_avg"]
+        "age_diff": (
+            fighter_one_stats["age"]
+            - fighter_two_stats["age"]
+        ),
+
+        "reach_diff": (
+            fighter_one_stats["reach"]
+            - fighter_two_stats["reach"]
+        ),
+
+        "height_diff": (
+            fighter_one_stats["height"]
+            - fighter_two_stats["height"]
+        ),
+
+        "str_acc_diff": (
+            fighter_one_stats["str_acc"]
+            - fighter_two_stats["str_acc"]
+        ),
+
+        "splm_diff": (
+            fighter_one_stats["splm"]
+            - fighter_two_stats["splm"]
+        ),
+
+        "sapm_diff": (
+            fighter_one_stats["sapm"]
+            - fighter_two_stats["sapm"]
+        ),
+
+        "td_avg_diff": (
+            fighter_one_stats["td_avg"]
+            - fighter_two_stats["td_avg"]
+        ),
+
+        "td_def_diff": (
+            fighter_one_stats["td_def"]
+            - fighter_two_stats["td_def"]
+        ),
+
+        "str_def_diff": (
+            fighter_one_stats["str_def"]
+            - fighter_two_stats["str_def"]
+        ),
+
+        "sub_avg_diff": (
+            fighter_one_stats["sub_avg"]
+            - fighter_two_stats["sub_avg"]
+        )
     }])
 
     probability = model.predict_proba(fight)
@@ -335,75 +369,15 @@ def predict_fight(fighter_one, fighter_two):
 
 
 choice = input(
-    "Choose mode: 1 = Single fight, 2 = Parlays, 3 = Tracker: "
+    "Choose mode: 1 = Fight Predictions, 2 = Tracker: "
 )
 
-# Single fight mode
+# Fight prediction mode
 if choice == "1":
 
-    fighter_one = input(
-        "Pick first fighter: "
-    )
-
-    fighter_two = input(
-        "Pick second fighter: "
-    )
-
-    fighter_one_prob, fighter_two_prob = (
-        predict_fight(
-            fighter_one,
-            fighter_two
-        )
-    )
-
-    print(
-        f"{fighter_one}: "
-        f"{fighter_one_prob * 100:.2f}%"
-    )
-
-    print(
-        f"{fighter_two}: "
-        f"{fighter_two_prob * 100:.2f}%"
-    )
-
-    save_answer = input(
-        "Save this prediction? y/n: "
-    )
-
-    if save_answer.lower() == "y":
-        fight_date = input(
-            "Enter fight date, like 2026-05-13: "
-        )
-
-        save_prediction(
-            fight_date,
-            fighter_one,
-            fighter_two,
-            fighter_one_prob,
-            fighter_two_prob
-        )
-
-# Parlay mode
-elif choice == "2":
-
     number_of_fights = int(
-        input(
-            "How many fights are you picking from? "
-        )
+        input("How many fights do you want to predict? ")
     )
-
-    parlay_size_input = input(
-        "How many legs per parlay? "
-        "Use commas for multiple sizes, like 2,3,4: "
-    )
-
-    # Convert input like "2,3,4" into [2, 3, 4]
-    parlay_sizes = [
-        int(size.strip())
-        for size in parlay_size_input.split(",")
-    ]
-
-    fights = []
 
     for i in range(number_of_fights):
 
@@ -435,10 +409,11 @@ elif choice == "2":
         )
 
         save_answer = input(
-            "Save this fight prediction? y/n: "
+            "Save this prediction? y/n: "
         )
 
         if save_answer.lower() == "y":
+
             fight_date = input(
                 "Enter fight date, like 2026-05-13: "
             )
@@ -451,58 +426,8 @@ elif choice == "2":
                 fighter_two_prob
             )
 
-        # Store both possible outcomes for this fight
-        fights.append([
-            (fighter_one, fighter_one_prob),
-            (fighter_two, fighter_two_prob)
-        ])
-
-    all_parlays = []
-
-    # Generate parlays for every requested leg size
-    for parlay_size in parlay_sizes:
-
-        parlays = generate_all_outcome_parlays(
-            fights,
-            parlay_size
-        )
-
-        # Store the parlay size with each parlay
-        for parlay in parlays:
-            all_parlays.append(
-                (parlay_size, parlay)
-            )
-
-    # Sort all mixed-size parlays by combined probability
-    all_parlays.sort(
-        key=lambda item: parlay_probability(item[1]),
-        reverse=True
-    )
-
-    print("\nBest Parlays:\n")
-
-    # Show top parlays
-    for parlay_size, parlay in all_parlays[:20]:
-
-        names = [
-            fighter
-            for fighter, probability in parlay
-        ]
-
-        combined_probability = (
-            parlay_probability(parlay)
-        )
-
-        print(f"{parlay_size}-leg parlay:")
-        print(" + ".join(names))
-
-        print(
-            f"Combined probability: "
-            f"{combined_probability * 100:.2f}%\n"
-        )
-
 # Tracker mode
-elif choice == "3":
+elif choice == "2":
 
     tracker_choice = input(
         "Tracker: 1 = Show predictions, "
