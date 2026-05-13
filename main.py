@@ -1,6 +1,8 @@
 import difflib
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
+import shap
+
+from sklearn.ensemble import RandomForestClassifier
 
 from parlay import (
     generate_all_outcome_parlays,
@@ -18,6 +20,21 @@ df["b_age"] = (
     pd.to_datetime(df["date"]) - pd.to_datetime(df["b_dob"])
 ).dt.days / 365
 
+# Create matchup difference features
+df["age_diff"] = df["r_age"] - df["b_age"]
+df["reach_diff"] = df["r_reach"] - df["b_reach"]
+df["height_diff"] = df["r_height"] - df["b_height"]
+
+df["str_acc_diff"] = df["r_str_acc"] - df["b_str_acc"]
+df["splm_diff"] = df["r_splm"] - df["b_splm"]
+df["sapm_diff"] = df["r_sapm"] - df["b_sapm"]
+
+df["td_avg_diff"] = df["r_td_avg"] - df["b_td_avg"]
+df["td_def_diff"] = df["r_td_def"] - df["b_td_def"]
+
+df["str_def_diff"] = df["r_str_def"] - df["b_str_def"]
+df["sub_avg_diff"] = df["r_sub_avg"] - df["b_sub_avg"]
+
 # Red corner win target
 df["red_won"] = (df["winner"] == df["r_name"]).astype(int)
 
@@ -25,14 +42,47 @@ df["red_won"] = (df["winner"] == df["r_name"]).astype(int)
 features = [
     "r_str_acc",
     "b_str_acc",
+
     "r_td_avg",
     "b_td_avg",
+
     "r_height",
     "b_height",
+
     "r_reach",
     "b_reach",
+
     "r_age",
-    "b_age"
+    "b_age",
+
+    "r_splm",
+    "b_splm",
+
+    "r_sapm",
+    "b_sapm",
+
+    "r_str_def",
+    "b_str_def",
+
+    "r_td_def",
+    "b_td_def",
+
+    "r_sub_avg",
+    "b_sub_avg",
+
+    "age_diff",
+    "reach_diff",
+    "height_diff",
+
+    "str_acc_diff",
+    "splm_diff",
+    "sapm_diff",
+
+    "td_avg_diff",
+    "td_def_diff",
+
+    "str_def_diff",
+    "sub_avg_diff"
 ]
 
 data = df.dropna(subset=features + ["red_won"])
@@ -40,9 +90,29 @@ data = df.dropna(subset=features + ["red_won"])
 X = data[features]
 y = data["red_won"]
 
-# Train logistic regression model
-model = LogisticRegression(max_iter=1000)
+# Train random forest model
+model = RandomForestClassifier(
+    n_estimators=100,
+    random_state=42
+)
+
 model.fit(X, y)
+
+# Create SHAP explainer for local prediction explanations
+explainer = shap.TreeExplainer(model)
+
+# Show feature importance
+importance = pd.DataFrame({
+    "feature": features,
+    "importance": model.feature_importances_
+})
+
+importance = importance.sort_values(
+    by="importance",
+    ascending=False
+)
+
+print(importance)
 
 print("Model trained!")
 
@@ -95,13 +165,23 @@ def get_fighter_stats(name):
         "r_td_avg",
         "r_height",
         "r_reach",
-        "r_age"
+        "r_age",
+        "r_splm",
+        "r_sapm",
+        "r_str_def",
+        "r_td_def",
+        "r_sub_avg"
     ]].rename(columns={
         "r_str_acc": "str_acc",
         "r_td_avg": "td_avg",
         "r_height": "height",
         "r_reach": "reach",
-        "r_age": "age"
+        "r_age": "age",
+        "r_splm": "splm",
+        "r_sapm": "sapm",
+        "r_str_def": "str_def",
+        "r_td_def": "td_def",
+        "r_sub_avg": "sub_avg"
     })
 
     blue_fights = df[df["b_name"] == name][[
@@ -109,13 +189,23 @@ def get_fighter_stats(name):
         "b_td_avg",
         "b_height",
         "b_reach",
-        "b_age"
+        "b_age",
+        "b_splm",
+        "b_sapm",
+        "b_str_def",
+        "b_td_def",
+        "b_sub_avg"
     ]].rename(columns={
         "b_str_acc": "str_acc",
         "b_td_avg": "td_avg",
         "b_height": "height",
         "b_reach": "reach",
-        "b_age": "age"
+        "b_age": "age",
+        "b_splm": "splm",
+        "b_sapm": "sapm",
+        "b_str_def": "str_def",
+        "b_td_def": "td_def",
+        "b_sub_avg": "sub_avg"
     })
 
     fighter = pd.concat([
@@ -128,7 +218,12 @@ def get_fighter_stats(name):
         "td_avg": fighter["td_avg"].mean(),
         "height": fighter["height"].mean(),
         "reach": fighter["reach"].mean(),
-        "age": fighter["age"].mean()
+        "age": fighter["age"].mean(),
+        "splm": fighter["splm"].mean(),
+        "sapm": fighter["sapm"].mean(),
+        "str_def": fighter["str_def"].mean(),
+        "td_def": fighter["td_def"].mean(),
+        "sub_avg": fighter["sub_avg"].mean()
     }
 
     if any(
@@ -140,6 +235,46 @@ def get_fighter_stats(name):
         )
 
     return stats
+
+
+# Explain what pushed the prediction up or down
+def explain_prediction(fight):
+    shap_values = explainer.shap_values(fight)
+
+    # Class 1 means red fighter / fighter one wins
+    if isinstance(shap_values, list):
+        fighter_one_shap = shap_values[1][0]
+    else:
+        fighter_one_shap = shap_values[0, :, 1]
+
+    explanation = pd.DataFrame({
+        "feature": fight.columns,
+        "value": fight.iloc[0].values,
+        "shap_value": fighter_one_shap
+    })
+
+    explanation["impact"] = explanation["shap_value"].abs()
+
+    explanation = explanation.sort_values(
+        by="impact",
+        ascending=False
+    )
+
+    print("\nTop reasons for prediction:\n")
+
+    for _, row in explanation.head(10).iterrows():
+        direction = (
+            "pushed toward fighter one"
+            if row["shap_value"] > 0
+            else "pushed away from fighter one"
+        )
+
+        print(
+            f'{row["feature"]}: {row["value"]:.2f} '
+            f'→ {direction}'
+        )
+
+    print()
 
 
 # Predict fight probabilities
@@ -158,17 +293,88 @@ def predict_fight(fighter_one, fighter_two):
     fight = pd.DataFrame([{
         "r_str_acc": fighter_one_stats["str_acc"],
         "b_str_acc": fighter_two_stats["str_acc"],
+
         "r_td_avg": fighter_one_stats["td_avg"],
         "b_td_avg": fighter_two_stats["td_avg"],
+
         "r_height": fighter_one_stats["height"],
         "b_height": fighter_two_stats["height"],
+
         "r_reach": fighter_one_stats["reach"],
         "b_reach": fighter_two_stats["reach"],
+
         "r_age": fighter_one_stats["age"],
-        "b_age": fighter_two_stats["age"]
+        "b_age": fighter_two_stats["age"],
+
+        "r_splm": fighter_one_stats["splm"],
+        "b_splm": fighter_two_stats["splm"],
+
+        "r_sapm": fighter_one_stats["sapm"],
+        "b_sapm": fighter_two_stats["sapm"],
+
+        "r_str_def": fighter_one_stats["str_def"],
+        "b_str_def": fighter_two_stats["str_def"],
+
+        "r_td_def": fighter_one_stats["td_def"],
+        "b_td_def": fighter_two_stats["td_def"],
+
+        "r_sub_avg": fighter_one_stats["sub_avg"],
+        "b_sub_avg": fighter_two_stats["sub_avg"],
+
+        "age_diff": (
+            fighter_one_stats["age"]
+            - fighter_two_stats["age"]
+        ),
+
+        "reach_diff": (
+            fighter_one_stats["reach"]
+            - fighter_two_stats["reach"]
+        ),
+
+        "height_diff": (
+            fighter_one_stats["height"]
+            - fighter_two_stats["height"]
+        ),
+
+        "str_acc_diff": (
+            fighter_one_stats["str_acc"]
+            - fighter_two_stats["str_acc"]
+        ),
+
+        "splm_diff": (
+            fighter_one_stats["splm"]
+            - fighter_two_stats["splm"]
+        ),
+
+        "sapm_diff": (
+            fighter_one_stats["sapm"]
+            - fighter_two_stats["sapm"]
+        ),
+
+        "td_avg_diff": (
+            fighter_one_stats["td_avg"]
+            - fighter_two_stats["td_avg"]
+        ),
+
+        "td_def_diff": (
+            fighter_one_stats["td_def"]
+            - fighter_two_stats["td_def"]
+        ),
+
+        "str_def_diff": (
+            fighter_one_stats["str_def"]
+            - fighter_two_stats["str_def"]
+        ),
+
+        "sub_avg_diff": (
+            fighter_one_stats["sub_avg"]
+            - fighter_two_stats["sub_avg"]
+        )
     }])
 
     probability = model.predict_proba(fight)
+
+    explain_prediction(fight)
 
     return probability[0][1], probability[0][0]
 
@@ -214,11 +420,16 @@ elif choice == "2":
         )
     )
 
-    parlay_size = int(
-        input(
-            "How many legs per parlay? "
-        )
+    parlay_size_input = input(
+        "How many legs per parlay? "
+        "Use commas for multiple sizes, like 2,3,4: "
     )
+
+    # Convert input like "2,3,4" into [2, 3, 4]
+    parlay_sizes = [
+        int(size.strip())
+        for size in parlay_size_input.split(",")
+    ]
 
     fights = []
 
@@ -251,22 +462,38 @@ elif choice == "2":
             f"{fighter_two_prob * 100:.2f}%"
         )
 
-        # Store both outcomes
+        # Store both possible outcomes for this fight
         fights.append([
             (fighter_one, fighter_one_prob),
             (fighter_two, fighter_two_prob)
         ])
 
-    # Generate all parlays
-    parlays = generate_all_outcome_parlays(
-        fights,
-        parlay_size
+    all_parlays = []
+
+    # Generate parlays for every requested leg size
+    for parlay_size in parlay_sizes:
+
+        parlays = generate_all_outcome_parlays(
+            fights,
+            parlay_size
+        )
+
+        # Store the parlay size with each parlay
+        for parlay in parlays:
+            all_parlays.append(
+                (parlay_size, parlay)
+            )
+
+    # Sort all mixed-size parlays by combined probability
+    all_parlays.sort(
+        key=lambda item: parlay_probability(item[1]),
+        reverse=True
     )
 
     print("\nBest Parlays:\n")
 
     # Show top parlays
-    for parlay in parlays[:20]:
+    for parlay_size, parlay in all_parlays[:20]:
 
         names = [
             fighter
@@ -277,6 +504,7 @@ elif choice == "2":
             parlay_probability(parlay)
         )
 
+        print(f"{parlay_size}-leg parlay:")
         print(" + ".join(names))
 
         print(
